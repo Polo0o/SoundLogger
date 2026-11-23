@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SoundLogger</string>
+    <string name="notif_channel_name">Enregistrement nocturne</string>
+    <string name="notif_title">Nuit en cours</string>
+    <string name="notif_text">SoundLogger mesure le bruit ambiant…</string>
+    <string name="start_night">Démarrer la nuit</string>
+    <string name="stop_night">Arrêter la nuit</string>
+</resources>
