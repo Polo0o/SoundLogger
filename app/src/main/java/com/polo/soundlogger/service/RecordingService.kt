@@ -71,10 +71,10 @@ class RecordingService : Service() {
                 onLevel = { level ->
                     (RecordingServiceController.currentLevel as MutableStateFlow).value = level.leqDb
                     if (nightId > 0) {
-                        dao.insertSample(
-                            Sample(nightId = nightId, ts = level.timestampMs,
-                                   leq = level.leqDb, minDb = level.minDb, maxDb = level.maxDb)
-                        )
+                        // insertSample est suspend : on est sur le thread du meter.
+                        val sample = Sample(nightId = nightId, ts = level.timestampMs,
+                            leq = level.leqDb, minDb = level.minDb, maxDb = level.maxDb)
+                        scope.launch { dao.insertSample(sample) }
                     }
                 }
                 start()
