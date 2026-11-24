@@ -12,10 +12,10 @@
 - [x] Calibration : `calibrationOffsetDb` exposé dans les réglages + aide (sonomètre de référence), persisté via `SettingsRepository`.
 - [x] Pondération A logicielle (filtres IEC 61672, `AWeightingFilter`) + tests unitaires ; vrais min/max par sous-fenêtres dans `SoundLevelMeter`.
 
-## Étape 2 — Détection d'événements complète
-- [ ] Compléter `EventDetector` : accumuler Leq/min/max pendant l'événement, Leq moyen, écart au bruit moyen de la nuit (TODO/NOTE v0.2 dans le fichier).
-- [ ] Persister les événements (nouvelle table Room `events`).
-- [ ] Tests unitaires sur nuits simulées.
+## Étape 2 — Détection d'événements complète (fait)
+- [x] `EventDetector` complété : machine à états (seuil, hystérésis seuil-2 dB, durée min 500 ms, retour au calme 10 s), Leq énergétique de l'événement, max, écart au bruit moyen de la nuit rempli à `finish()`, événements tronqués marqués. Suspension avant calcul de la référence en mode relatif.
+- [x] Événements persistés (table Room `events`, DB v2) + stats de nuit à l'arrêt du service (`NightStats` : Leq, min/max, L10/L50/L90, heure la plus bruyante).
+- [x] Tests unitaires sur nuits simulées (`EventDetectorTest` 5 tests, `NightStatsTest` 2 tests, `AWeightingFilterTest` 3 tests) : `./gradlew testDebugUnitTest` OK.
 
 ## Étape 3 — Rapport du matin
 - [ ] Courbe Leq de la nuit : Vico ou MPAndroidChart, zoom, couleur par plage (<45 vert, 45-60 orange, >60 rouge), marqueurs d'événements.

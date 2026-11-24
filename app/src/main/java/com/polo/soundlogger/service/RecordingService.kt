@@ -16,9 +16,13 @@ import androidx.core.content.ContextCompat
 import com.polo.soundlogger.R
 import com.polo.soundlogger.audio.SoundLevelMeter
 import com.polo.soundlogger.data.AppDatabase
+import com.polo.soundlogger.data.Event
 import com.polo.soundlogger.data.Night
+import com.polo.soundlogger.data.NightStats
 import com.polo.soundlogger.data.Sample
 import com.polo.soundlogger.data.SettingsRepository
+import com.polo.soundlogger.detection.DetectionConfig
+import com.polo.soundlogger.detection.EventDetector
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -26,6 +30,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 /** État partagé service -> UI. */
 object RecordingServiceController {
@@ -36,11 +41,13 @@ object RecordingServiceController {
 /**
  * Foreground service de type microphone (spec §2.3) : mesure pendant toute la
  * nuit, écran verrouillé, wake lock partiel, notification permanente.
+ * Alimente la détection d'événements (spec §3) et persiste samples + événements.
  */
 class RecordingService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var meter: SoundLevelMeter? = null
+    private var detector: EventDetector? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var nightId: Long = -1
 
@@ -79,6 +86,15 @@ class RecordingService : Service() {
             val settings = SettingsRepository.get(applicationContext).settings.value
             val dao = AppDatabase.get(applicationContext).nightDao()
             nightId = dao.insertNight(Night(startTime = System.currentTimeMillis()))
+            detector = EventDetector(
+                DetectionConfig(
+                    mode = settings.detectionMode,
+                    absoluteThresholdDb = settings.absoluteThresholdDb,
+                    deltaDb = settings.deltaDb,
+                    minAboveDurationMs = settings.minAboveDurationMs,
+                    calmDurationMs = settings.calmDurationMs
+                )
+            ).apply { startSession(System.currentTimeMillis()) }
             meter = SoundLevelMeter(
                 windowMs = settings.windowMs,
                 calibrationOffsetDb = settings.calibrationOffsetDb
@@ -90,6 +106,11 @@ class RecordingService : Service() {
                         val sample = Sample(nightId = nightId, ts = level.timestampMs,
                             leq = level.leqDb, minDb = level.minDb, maxDb = level.maxDb)
                         scope.launch { dao.insertSample(sample) }
+                        // détection d'événements en flux (spec §3)
+                        val closed = detector?.onSample(level).orEmpty()
+                        for (ev in closed) {
+                            scope.launch { dao.insertEvent(ev.toEntity(nightId)) }
+                        }
                     }
                 }
                 start()
@@ -99,20 +120,45 @@ class RecordingService : Service() {
     }
 
     override fun onDestroy() {
-        meter?.stop()
+        meter?.stop() // join du thread de mesure : plus aucun callback onLevel ensuite
         meter = null
         wakeLock?.takeIf { it.isHeld }?.release()
         if (nightId > 0) {
             val id = nightId
-            scope.launch {
-                AppDatabase.get(applicationContext).nightDao().finishNight(id, System.currentTimeMillis())
+            // runBlocking : onDestroy n'attend pas les coroutines ; ne pas perdre la clôture.
+            runBlocking {
+                val dao = AppDatabase.get(applicationContext).nightDao()
+                // événements finaux (avec écart au bruit moyen de la nuit, spec §3)
+                val finalEvents = detector?.finish(System.currentTimeMillis()).orEmpty()
+                dao.deleteEventsOfNight(id)
+                finalEvents.forEach { dao.insertEvent(it.toEntity(id)) }
+                // rétro-analyse de la nuit : stats agrégées (spec §3, §4.2)
+                val stats = NightStats.compute(dao.samplesOfNight(id))
+                val statsJson = stats?.let {
+                    """{"leq":${"%.2f".format(it.leqDb)},"min":${"%.2f".format(it.minDb)},""" +
+                        """"max":${"%.2f".format(it.maxDb)},"l10":${"%.2f".format(it.l10)},""" +
+                        """"l50":${"%.2f".format(it.l50)},"l90":${"%.2f".format(it.l90)},""" +
+                        """"loudestHour":${it.loudestHourStartMs ?: "null"}}"""
+                }
+                if (stats != null) {
+                    dao.finishNightWithStats(id, System.currentTimeMillis(),
+                        stats.leqDb, stats.minDb, stats.maxDb, finalEvents.size, statsJson ?: "")
+                } else {
+                    dao.finishNight(id, System.currentTimeMillis())
+                }
             }
         }
+        detector = null
         scope.cancel()
         (RecordingServiceController.isRecording as MutableStateFlow).value = false
         (RecordingServiceController.currentLevel as MutableStateFlow).value = 0.0
         super.onDestroy()
     }
+
+    private fun com.polo.soundlogger.detection.SoundEvent.toEntity(night: Long) = Event(
+        nightId = night, startMs = startMs, endMs = endMs, leqDb = leqDb,
+        maxDb = maxDb, deltaVsNightMeanDb = deltaVsNightMeanDb, truncated = truncated
+    )
 
     private fun buildNotification(): Notification =
         NotificationCompat.Builder(this, CHANNEL_ID)

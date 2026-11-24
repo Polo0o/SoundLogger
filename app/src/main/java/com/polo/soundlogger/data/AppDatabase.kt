@@ -5,7 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [Night::class, Sample::class], version = 1)
+@Database(entities = [Night::class, Sample::class, Event::class], version = 2)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun nightDao(): NightDao
 
@@ -15,6 +15,9 @@ abstract class AppDatabase : RoomDatabase() {
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "soundlogger.db")
+                    // v1 -> v2 : ajout de la table events. Pas d'utilisateurs en prod :
+                    // migration destructive acceptable en dev (TODO migration propre avant release).
+                    .fallbackToDestructiveMigration()
                     .build()
                     .also { instance = it }
             }

@@ -30,6 +30,22 @@ data class Sample(
     val maxDb: Double
 )
 
+/**
+ * Un événement sonore détecté (spec §3, invariant AGENTS.md 4 :
+ * début, Leq moyen de l'événement, durée, dB max, écart au bruit moyen de la nuit).
+ */
+@Entity(tableName = "events")
+data class Event(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val nightId: Long,
+    val startMs: Long,
+    val endMs: Long,
+    val leqDb: Double,
+    val maxDb: Double,
+    val deltaVsNightMeanDb: Double,
+    val truncated: Boolean = false
+)
+
 @Dao
 interface NightDao {
     @Insert
@@ -38,14 +54,39 @@ interface NightDao {
     @Insert
     suspend fun insertSample(sample: Sample)
 
+    @Insert
+    suspend fun insertEvent(event: Event)
+
     @Query("UPDATE Night SET endTime = :endTime WHERE id = :id")
     suspend fun finishNight(id: Long, endTime: Long)
+
+    /** Clôture complète d'une nuit : fin + stats agrégées (spec §3, §4.2). */
+    @Query(
+        "UPDATE Night SET endTime = :endTime, leq = :leq, minDb = :minDb, maxDb = :maxDb, " +
+            "eventCount = :eventCount, stats = :stats WHERE id = :id"
+    )
+    suspend fun finishNightWithStats(
+        id: Long, endTime: Long, leq: Double, minDb: Double, maxDb: Double,
+        eventCount: Int, stats: String
+    )
 
     @Query("SELECT * FROM Night ORDER BY startTime DESC")
     suspend fun allNights(): List<Night>
 
+    @Query("SELECT * FROM Night WHERE id = :id")
+    suspend fun nightById(id: Long): Night?
+
     @Query("SELECT * FROM Sample WHERE nightId = :nightId ORDER BY ts")
     suspend fun samplesOfNight(nightId: Long): List<Sample>
+
+    @Query("SELECT * FROM events WHERE nightId = :nightId ORDER BY startMs")
+    suspend fun eventsOfNight(nightId: Long): List<Event>
+
+    @Query("DELETE FROM events WHERE nightId = :nightId")
+    suspend fun deleteEventsOfNight(nightId: Long)
+
+    @Query("DELETE FROM Sample WHERE nightId = :nightId")
+    suspend fun deleteSamplesOfNight(nightId: Long)
 
     @Query("DELETE FROM Night WHERE id = :id")
     suspend fun deleteNight(id: Long)

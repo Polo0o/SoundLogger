@@ -1,8 +1,10 @@
 package com.polo.soundlogger.detection
 
 import com.polo.soundlogger.audio.SoundLevel
+import kotlin.math.log10
+import kotlin.math.max
 
-/** Mode de détection d'événements (spec §3 et §4.1). */
+/** Mode de détection d'événements (spec §3 et §4.1, invariant AGENTS.md 3). */
 enum class DetectionMode {
     /** Seuil absolu fixe (ex. 55 dB). */
     ABSOLUTE_THRESHOLD,
@@ -24,37 +26,71 @@ data class DetectionConfig(
     val calmDurationMs: Long = 10_000
 )
 
+/** Un événement détecté (invariant AGENTS.md 4 : début, Leq, durée, max, écart à la moyenne de nuit). */
 data class SoundEvent(
     val startMs: Long,
     val endMs: Long,
-    val leqDb: Double,     // niveau moyen de l'événement
+    val leqDb: Double,     // Leq moyen de l'événement
     val maxDb: Double,
-    val deltaVsNightMeanDb: Double // écart au bruit moyen de la nuit
-)
+    val deltaVsNightMeanDb: Double, // écart au Leq moyen de la nuit (rempli à finish())
+    /** true si l'événement était encore en cours à la fin de session (tronqué). */
+    val truncated: Boolean = false
+) {
+    val durationMs: Long get() = endMs - startMs
+}
 
 /**
- * Détecteur d'événements en flux (spec §3).
- * En mode DEFERRED_RELATIVE, la détection est suspendue tant que la référence
- * (moyenne t0+15 -> t0+30) n'est pas calculée.
+ * Détecteur d'événements en flux (spec §3, invariants AGENTS.md 3-4).
+ *
+ * Machine à états : IDLE -> ABOVE (niveau >= seuil) -> confirmé après
+ * [DetectionConfig.minAboveDurationMs] -> fin quand le niveau retombe sous
+ * seuil - 2 dB pendant >= [DetectionConfig.calmDurationMs].
+ *
+ * En mode DEFERRED_RELATIVE, la détection est **suspendue** tant que la
+ * référence (moyenne des niveaux entre t0+15 et t0+30 min) n'est pas calculée
+ * ([referenceReady] == false) ; un échantillon dans la fenêtre de référence
+ * alimente celle-ci.
+ *
+ * Le Leq de l'événement est la moyenne énergétique des échantillons de
+ * l'événement ; l'écart au bruit moyen de la nuit est rempli dans [finish].
  */
 class EventDetector(private val config: DetectionConfig) {
 
     private var sessionStartMs: Long = 0
-    private val referenceWindow = mutableListOf<SoundLevel>()
+    private val referenceWindow = mutableListOf<Double>()
     var referenceDb: Double? = null
         private set
+    /** false tant que la référence n'est pas calculée (mode relatif) : détection suspendue. */
+    var referenceReady: Boolean = false
+        private set
+
+    // statistiques de la nuit (tous échantillons) pour l'écart à la moyenne
+    private var nightSumLin = 0.0
+    private var nightCount = 0L
 
     // état de l'événement en cours
     private var aboveSince: Long? = null
+    private var confirmed = false
     private var calmSince: Long? = null
+    private var evSumLin = 0.0
+    private var evCount = 0L
+    private var evMaxDb = Double.NEGATIVE_INFINITY
+
     private val events = mutableListOf<SoundEvent>()
 
     fun startSession(nowMs: Long) {
         sessionStartMs = nowMs
         referenceWindow.clear()
         referenceDb = null
+        referenceReady = config.mode == DetectionMode.ABSOLUTE_THRESHOLD
+        nightSumLin = 0.0
+        nightCount = 0
         aboveSince = null
+        confirmed = false
         calmSince = null
+        evSumLin = 0.0
+        evCount = 0
+        evMaxDb = Double.NEGATIVE_INFINITY
         events.clear()
     }
 
@@ -62,59 +98,126 @@ class EventDetector(private val config: DetectionConfig) {
     fun onSample(level: SoundLevel): List<SoundEvent> {
         if (sessionStartMs == 0L) startSession(level.timestampMs)
 
+        // stats de la nuit (moyenne énergétique globale)
+        nightSumLin += dbToLin(level.leqDb)
+        nightCount++
+
         // Alimentation de la fenêtre de référence (t0+15 -> t0+30)
         if (config.mode == DetectionMode.DEFERRED_RELATIVE && referenceDb == null) {
             val t = level.timestampMs - sessionStartMs
             if (t in config.referenceWindowStartMs..config.referenceWindowEndMs) {
-                referenceWindow.add(level)
+                referenceWindow.add(level.leqDb)
             } else if (t > config.referenceWindowEndMs) {
-                referenceDb = referenceWindow.map { it.leqDb }.average()
+                computeReference()
             }
         }
 
         val threshold = when (config.mode) {
             DetectionMode.ABSOLUTE_THRESHOLD -> config.absoluteThresholdDb
-            DetectionMode.DEFERRED_RELATIVE -> (referenceDb ?: return emptyList()) + config.deltaDb
-        }
-        val endThreshold = threshold - 2.0
-
-        val now = level.timestampMs
-        if (level.leqDb >= threshold) {
-            if (aboveSince == null) aboveSince = now
-            calmSince = null
-        } else {
-            val start = aboveSince
-            if (start != null && now - start >= config.minAboveDurationMs) {
-                calmSince = calmSince ?: now
-                if (now - (calmSince ?: now) >= config.calmDurationMs && level.leqDb < endThreshold) {
-                    events.add(buildEvent(start, calmSince ?: now, level))
-                    aboveSince = null
-                    calmSince = null
-                }
-            } else if (level.leqDb < endThreshold) {
-                aboveSince = null // dépassement trop bref
+            DetectionMode.DEFERRED_RELATIVE -> {
+                val r = referenceDb ?: return emptyList() // détection suspendue (spec §3)
+                r + config.deltaDb
             }
         }
-        // NOTE v0.2 : accumuler les Leq/min/max de l'événement en cours pour
-        // calculer le Leq de l'événement et l'écart à la moyenne de la nuit.
-        return emptyList()
+        val endThreshold = threshold - 2.0
+        val now = level.timestampMs
+        val closed = mutableListOf<SoundEvent>()
+
+        if (level.leqDb >= threshold) {
+            if (aboveSince == null) {
+                aboveSince = now
+                confirmed = false
+                calmSince = null
+                evSumLin = 0.0
+                evCount = 0
+                evMaxDb = Double.NEGATIVE_INFINITY
+            }
+            if (now - (aboveSince ?: now) >= config.minAboveDurationMs) confirmed = true
+            calmSince = null
+            accumulate(level)
+        } else {
+            val start = aboveSince
+            if (start != null) {
+                if (confirmed) {
+                    if (level.leqDb >= endThreshold) {
+                        // hystérésis : encore dans l'événement
+                        calmSince = null
+                        accumulate(level)
+                    } else {
+                        calmSince = calmSince ?: now
+                        if (now - calmSince!! >= config.calmDurationMs) {
+                            val ev = closeEvent(start, calmSince!!, truncated = false)
+                            events.add(ev)
+                            closed.add(ev)
+                            resetCurrent()
+                        }
+                    }
+                } else if (level.leqDb < endThreshold) {
+                    resetCurrent() // dépassement trop bref (< minAboveDurationMs)
+                }
+            }
+        }
+        return closed
     }
 
-    /** Événements restants à la fin de session (événement en cours tronqué). */
+    /** Événements fermés jusqu'ici (deltaVsNightMeanDb à 0 tant que finish() n'a pas tourné). */
+    fun currentEvents(): List<SoundEvent> = events.toList()
+
+    /**
+     * Fin de session : ferme l'événement en cours (tronqué), calcule la
+     * référence si la fenêtre n'a pas été atteinte, et remplit l'écart au
+     * bruit moyen de la nuit pour tous les événements.
+     */
     fun finish(nowMs: Long): List<SoundEvent> {
-        aboveSince?.let { start ->
-            events.add(buildEvent(start, nowMs, null))
-            aboveSince = null
+        if (config.mode == DetectionMode.DEFERRED_RELATIVE && referenceDb == null) computeReference()
+        val start = aboveSince
+        if (start != null && confirmed) {
+            events.add(closeEvent(start, nowMs, truncated = true))
         }
+        resetCurrent()
+        val nightMeanDb = if (nightCount > 0) linToDb(nightSumLin / nightCount) else 0.0
+        val withDelta = events.map { it.copy(deltaVsNightMeanDb = it.leqDb - nightMeanDb) }
+        events.clear()
+        events.addAll(withDelta)
         return events.toList()
     }
 
-    private fun buildEvent(startMs: Long, endMs: Long, last: SoundLevel?): SoundEvent =
+    private fun computeReference() {
+        referenceDb = if (referenceWindow.isNotEmpty()) {
+            referenceWindow.average()
+        } else if (nightCount > 0) {
+            linToDb(nightSumLin / nightCount) // session plus courte que la fenêtre
+        } else {
+            0.0
+        }
+        referenceReady = true
+    }
+
+    private fun accumulate(level: SoundLevel) {
+        evSumLin += dbToLin(level.leqDb)
+        evCount++
+        evMaxDb = max(evMaxDb, level.maxDb)
+    }
+
+    private fun closeEvent(start: Long, end: Long, truncated: Boolean): SoundEvent =
         SoundEvent(
-            startMs = startMs,
-            endMs = endMs,
-            leqDb = last?.leqDb ?: 0.0, // TODO v0.2 : Leq moyen de l'événement
-            maxDb = last?.maxDb ?: 0.0, // TODO v0.2 : max sur l'événement
-            deltaVsNightMeanDb = 0.0     // TODO v0.2 : écart au Leq moyen de la nuit
+            startMs = start,
+            endMs = end,
+            leqDb = if (evCount > 0) linToDb(evSumLin / evCount) else 0.0,
+            maxDb = if (evMaxDb.isFinite()) evMaxDb else 0.0,
+            deltaVsNightMeanDb = 0.0, // rempli dans finish()
+            truncated = truncated
         )
+
+    private fun resetCurrent() {
+        aboveSince = null
+        confirmed = false
+        calmSince = null
+        evSumLin = 0.0
+        evCount = 0
+        evMaxDb = Double.NEGATIVE_INFINITY
+    }
+
+    private fun dbToLin(db: Double): Double = Math.pow(10.0, db / 10.0)
+    private fun linToDb(lin: Double): Double = 10.0 * log10(lin)
 }

@@ -53,6 +53,7 @@ App Android qui enregistre le niveau sonore ambiant toute la nuit, détecte les 
   - Fin d'événement après retour sous le seuil de fin (seuil de référence − 2 dB, ou seuil absolu − 2 dB) pendant ≥ 10 s.
   - Tant que la référence n'est pas calculée (avant t0+30 min), la détection en mode relatif est suspendue et signalée dans le rapport.
   - Événement = début, fin, durée, Leq de l'événement, dB max, écart au bruit moyen de la nuit, courbe zoomable de l'événement.
+  - Un événement encore en cours à la fin de la session est persisté **tronqué** (marqué `truncated`, fin = heure d'arrêt).
 - Classification heuristique optionnelle (motif spectral simple) : pic bref (claquement), soutenu (conversation/TV), grondement (trafic), siren-like (modulation) — affichée comme « type probable », jamais comme vérité.
 - Marquage des discontinuités (données manquantes).
 
