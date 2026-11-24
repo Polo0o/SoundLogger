@@ -1,20 +1,24 @@
 package com.polo.soundlogger.service
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.polo.soundlogger.R
 import com.polo.soundlogger.audio.SoundLevelMeter
 import com.polo.soundlogger.data.AppDatabase
 import com.polo.soundlogger.data.Night
 import com.polo.soundlogger.data.Sample
+import com.polo.soundlogger.data.SettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -49,6 +53,13 @@ class RecordingService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (RecordingServiceController.isRecording.value) return START_STICKY
+        // Garde-fou : sans RECORD_AUDIO, AudioRecord lèverait SecurityException.
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
 
         val notif = buildNotification()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -65,9 +76,13 @@ class RecordingService : Service() {
         (RecordingServiceController.isRecording as MutableStateFlow).value = true
 
         scope.launch {
+            val settings = SettingsRepository.get(applicationContext).settings.value
             val dao = AppDatabase.get(applicationContext).nightDao()
             nightId = dao.insertNight(Night(startTime = System.currentTimeMillis()))
-            meter = SoundLevelMeter(windowMs = 250).apply {
+            meter = SoundLevelMeter(
+                windowMs = settings.windowMs,
+                calibrationOffsetDb = settings.calibrationOffsetDb
+            ).apply {
                 onLevel = { level ->
                     (RecordingServiceController.currentLevel as MutableStateFlow).value = level.leqDb
                     if (nightId > 0) {
