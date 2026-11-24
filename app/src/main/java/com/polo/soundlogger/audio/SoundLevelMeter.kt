@@ -18,12 +18,15 @@ data class SoundLevel(
 
 /**
  * Mesure du niveau sonore via AudioRecord PCM (spec §2.1-2.2).
- * 16 kHz / 16 bits / mono, fenêtre par défaut de 250 ms.
- * La pondération A (IEC 61672) est un TODO v0.2 ; en attendant : dB FS + offset.
+ * 16 kHz / 16 bits / mono, fenêtre par défaut de 250 ms (réglable 100–1000 ms).
+ * Pondération A logicielle (IEC 61672, [AWeightingFilter]) + offset de
+ * calibration : les niveaux affichés sont des dB(A) calibrés.
+ * Chaque point rapporte le Leq de la fenêtre et les min/max des
+ * sous-fenêtres (10 par fenêtre).
  */
 class SoundLevelMeter(
     private val windowMs: Int = 250,
-    // Offset de calibration par défaut (~micro de smartphone), réglable. TODO: calibration utilisateur.
+    // Offset de calibration par défaut (~micro de smartphone), réglable dans les réglages.
     private val calibrationOffsetDb: Double = 90.0
 ) {
     companion object {
@@ -63,22 +66,45 @@ class SoundLevelMeter(
 
     private fun loop() {
         val samplesPerWindow = SAMPLE_RATE * windowMs / 1000
+        // 10 sous-fenêtres par fenêtre pour les min/max (spec §2.2).
+        val subSamples = maxOf(1, samplesPerWindow / 10)
         val buffer = ShortArray(samplesPerWindow)
+        val aWeighting = AWeightingFilter(SAMPLE_RATE)
         while (running) {
             val n = record?.read(buffer, 0, samplesPerWindow) ?: break
             if (n <= 0) continue
             var sumSquares = 0.0
             var peak = 0.0
-            for (i in 0 until n) {
-                val s = buffer[i] / 32768.0
-                sumSquares += s * s
-                val a = abs(s)
-                if (a > peak) peak = a
+            var minSubDb = Double.POSITIVE_INFINITY
+            var maxSubDb = 0.0
+            var idx = 0
+            while (idx < n) {
+                val start = idx
+                val end = minOf(idx + subSamples, n)
+                var subSq = 0.0
+                while (idx < end) {
+                    val s = buffer[idx] / 32768.0
+                    val w = aWeighting.process(s) // pondération A (IEC 61672)
+                    sumSquares += w * w
+                    subSq += w * w
+                    val a = abs(w)
+                    if (a > peak) peak = a
+                    idx++
+                }
+                val subDb = toDb(sqrt(subSq / (end - start)))
+                if (subDb < minSubDb) minSubDb = subDb
+                if (subDb > maxSubDb) maxSubDb = subDb
             }
             val rms = sqrt(sumSquares / n)
             val leq = toDb(rms)
-            // min/max TODO v0.2 : min réel sur sous-fenêtres
-            onLevel?.invoke(SoundLevel(System.currentTimeMillis(), leq, leq - 6.0, toDb(peak)))
+            onLevel?.invoke(
+                SoundLevel(
+                    timestampMs = System.currentTimeMillis(),
+                    leqDb = leq,
+                    minDb = minSubDb,
+                    maxDb = maxOf(toDb(peak), maxSubDb)
+                )
+            )
         }
     }
 
