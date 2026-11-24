@@ -2,15 +2,15 @@
 
 Étapes par ordre de priorité. Commiter et pousser après chacune.
 
-## Étape 0 — Build initial (en cours)
-- [ ] Cloner le dépôt, ouvrir dans Android Studio, ajouter le Gradle wrapper (`gradle wrapper --gradle-version 8.7`).
-- [ ] `./gradlew assembleDebug` : corriger jusqu'à compilation OK (import manquants éventuels, ex. `androidx.core:core-ktx` pour NotificationCompat, `androidx.compose.material:material-icons-extended` pour les icônes de navigation).
+## Étape 0 — Build initial (fait)
+- [x] Cloner le dépôt, ajouter le Gradle wrapper (`gradle wrapper --gradle-version 8.7`).
+- [x] `./gradlew assembleDebug` : compilation OK (material-icons-extended ajouté, insertSample suspend déplacé dans une coroutine).
 
-## Étape 1 — Acquisition de confiance
-- [ ] Smoke test sur téléphone réel : démarrer une session, verrouiller l'écran, vérifier que les samples s'écrivent en continu pendant ≥ 30 min.
-- [ ] Vérifier notification permanente + immunité Doze (wake lock + éventuellement demande d'ignorer l'optimisation de batterie).
-- [ ] Calibration : exposer `calibrationOffsetDb` dans les réglages + aide.
-- [ ] Pondération A logicielle (filtres IEC 61672) — sinon rester en dB FS + offset avec affichage honnête.
+## Étape 1 — Acquisition de confiance (fait côté code ; smoke test à valider sur device)
+- [ ] Smoke test sur téléphone réel : procédure écrite dans `docs/TEST_SMOKE.md` (adb, ≥ 30 min écran verrouillé, contrôle des discontinuités) — **à exécuter sur un téléphone réel**.
+- [x] Notification permanente + immunité Doze (wake lock partiel + demande d'exemption d'optimisation batterie dans Réglages).
+- [x] Calibration : `calibrationOffsetDb` exposé dans les réglages + aide (sonomètre de référence), persisté via `SettingsRepository`.
+- [x] Pondération A logicielle (filtres IEC 61672, `AWeightingFilter`) + tests unitaires ; vrais min/max par sous-fenêtres dans `SoundLevelMeter`.
 
 ## Étape 2 — Détection d'événements complète
 - [ ] Compléter `EventDetector` : accumuler Leq/min/max pendant l'événement, Leq moyen, écart au bruit moyen de la nuit (TODO/NOTE v0.2 dans le fichier).
