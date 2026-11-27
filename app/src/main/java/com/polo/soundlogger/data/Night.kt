@@ -5,6 +5,7 @@ import androidx.room.Entity
 import androidx.room.Insert
 import androidx.room.PrimaryKey
 import androidx.room.Query
+import androidx.room.Transaction
 
 /** Une nuit enregistrée (spec §5, table nights). */
 @Entity
@@ -16,7 +17,8 @@ data class Night(
     val minDb: Double? = null,
     val maxDb: Double? = null,
     val eventCount: Int? = null,
-    val stats: String? = null          // TODO v0.2 : L10/L50/L90, agrégats minute/heure
+    val stats: String? = null,        // JSON L10/L50/L90, heure la plus bruyante (spec §4.2)
+    val label: String? = null         // renommage optionnel (spec §4.3)
 )
 
 /** Un point de mesure (spec §5, table samples) : un par fenêtre (défaut 250 ms). */
@@ -90,4 +92,15 @@ interface NightDao {
 
     @Query("DELETE FROM Night WHERE id = :id")
     suspend fun deleteNight(id: Long)
+
+    @Query("UPDATE Night SET label = :label WHERE id = :id")
+    suspend fun renameNight(id: Long, label: String?)
+
+    /** Suppression en cascade d'une nuit (samples + événements + nuit), spec §4.3. */
+    @Transaction
+    suspend fun deleteNightCascade(id: Long) {
+        deleteEventsOfNight(id)
+        deleteSamplesOfNight(id)
+        deleteNight(id)
+    }
 }

@@ -23,10 +23,10 @@
 - [x] Liste des événements tapables → détail + zoom auto sur l'événement dans la courbe.
 - [x] Comparaison du Leq de la nuit avec la moyenne des nuits précédentes.
 
-## Étape 4 — Historique et export
-- [ ] Résumé multi-nuits (date, Leq, nb d'événements, durée, sparkline), suppression/renommage.
-- [ ] FileProvider (`file_paths.xml` + déclaration manifest) pour le partage CSV.
-- [ ] Déclencher l'agrégation et la détection à la fin de session (rétro-analyse de la nuit complète).
+## Étape 4 — Historique et export (fait)
+- [x] Résumé multi-nuits (`HistoryScreen`) : date, Leq, nb d'événements, durée, sparkline, suppression en cascade et renommage (colonne `label`, DB v3).
+- [x] FileProvider (`res/xml/file_paths.xml` + déclaration manifest) pour le partage CSV `night_YYYY-MM-DD.csv` via intent.
+- [x] Agrégation + détection déclenchées à la fin de session (rétro-analyse dans `RecordingService.onDestroy` : événements finaux avec deltas + stats de nuit).
 
 ## Étape 5 — Sessions programmées et finitions
 - [ ] Auto start/stop programmés (WorkManager), relance après reboot (RECEIVE_BOOT_COMPLETED).
