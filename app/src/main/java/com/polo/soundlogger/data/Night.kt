@@ -78,6 +78,10 @@ interface NightDao {
     @Query("SELECT * FROM Night WHERE id = :id")
     suspend fun nightById(id: Long): Night?
 
+    /** Dernière nuit non clôturée (service tué puis relancé : discontinuité, spec §2.3). */
+    @Query("SELECT * FROM Night WHERE endTime IS NULL ORDER BY startTime DESC LIMIT 1")
+    suspend fun latestOpenNight(): Night?
+
     @Query("SELECT * FROM Sample WHERE nightId = :nightId ORDER BY ts")
     suspend fun samplesOfNight(nightId: Long): List<Sample>
 

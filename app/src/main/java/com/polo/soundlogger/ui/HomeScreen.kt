@@ -93,6 +93,14 @@ fun HomeScreen() {
             Text("SoundLogger", fontSize = 28.sp)
             Spacer(Modifier.height(8.dp))
             Text("Prêt à enregistrer la nuit.", fontSize = 14.sp)
+            // Rappel de la session programmée si active (spec §4.1)
+            if (settings.autoStartEnabled) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Session programmée : ${settings.autoStartMinutes / 60} h → ${settings.autoStopMinutes / 60} h",
+                    fontSize = 12.sp
+                )
+            }
         }
         if (permissionDenied) {
             Spacer(Modifier.height(8.dp))

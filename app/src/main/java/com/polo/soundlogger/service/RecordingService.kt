@@ -87,6 +87,18 @@ class RecordingService : Service() {
         scope.launch {
             val settings = SettingsRepository.get(applicationContext).settings.value
             val dao = AppDatabase.get(applicationContext).nightDao()
+            // Service tué puis relancé (START_STICKY) : clôturer la nuit orpheline
+            // (discontinuité marquée par la fin de l'ancienne nuit, spec §2.3).
+            dao.latestOpenNight()?.let { orphan ->
+                val orphanStats = NightStats.compute(dao.samplesOfNight(orphan.id))
+                if (orphanStats != null) {
+                    dao.finishNightWithStats(orphan.id, System.currentTimeMillis(),
+                        orphanStats.leqDb, orphanStats.minDb, orphanStats.maxDb,
+                        dao.eventsOfNight(orphan.id).size, "")
+                } else {
+                    dao.finishNight(orphan.id, System.currentTimeMillis())
+                }
+            }
             nightId = dao.insertNight(Night(startTime = System.currentTimeMillis()))
             detector = EventDetector(
                 DetectionConfig(
