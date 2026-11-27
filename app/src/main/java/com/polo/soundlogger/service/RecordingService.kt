@@ -23,6 +23,7 @@ import com.polo.soundlogger.data.Sample
 import com.polo.soundlogger.data.SettingsRepository
 import com.polo.soundlogger.detection.DetectionConfig
 import com.polo.soundlogger.detection.EventDetector
+import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -38,6 +39,8 @@ object RecordingServiceController {
     val currentLevel: StateFlow<Double> = MutableStateFlow(0.0)
     /** Référence mesurée (moyenne t0+15→t0+30 min) en mode relatif, null sinon (spec §4.1). */
     val referenceDb: StateFlow<Double?> = MutableStateFlow(null)
+    /** Début de la session en cours (epoch ms), null si aucune (pour le chronomètre UI). */
+    val sessionStartMs: StateFlow<Long?> = MutableStateFlow(null)
 }
 
 /**
@@ -52,6 +55,8 @@ class RecordingService : Service() {
     private var detector: EventDetector? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var nightId: Long = -1
+    private var startedAtMs: Long = 0L
+    private var lastNotifMs: Long = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -84,6 +89,9 @@ class RecordingService : Service() {
 
         (RecordingServiceController.isRecording as MutableStateFlow).value = true
 
+        startedAtMs = System.currentTimeMillis()
+        (RecordingServiceController.sessionStartMs as MutableStateFlow).value = startedAtMs
+
         scope.launch {
             val settings = SettingsRepository.get(applicationContext).settings.value
             val dao = AppDatabase.get(applicationContext).nightDao()
@@ -114,8 +122,15 @@ class RecordingService : Service() {
                 calibrationOffsetDb = settings.calibrationOffsetDb
             ).apply {
                 onLevel = { level ->
+                    val nowMs = System.currentTimeMillis()
                     (RecordingServiceController.currentLevel as MutableStateFlow).value = level.leqDb
                     (RecordingServiceController.referenceDb as MutableStateFlow).value = detector?.referenceDb
+                    // Notification : compteur de temps + niveau courant, màj 1 fois/s (spec §2.3)
+                    if (nowMs - lastNotifMs >= 1000) {
+                        lastNotifMs = nowMs
+                        getSystemService(NotificationManager::class.java)
+                            .notify(NOTIF_ID, buildNotification(level.leqDb, nowMs - startedAtMs))
+                    }
                     if (nightId > 0) {
                         // insertSample est suspend : on est sur le thread du meter.
                         val sample = Sample(nightId = nightId, ts = level.timestampMs,
@@ -173,6 +188,7 @@ class RecordingService : Service() {
         (RecordingServiceController.isRecording as MutableStateFlow).value = false
         (RecordingServiceController.currentLevel as MutableStateFlow).value = 0.0
         (RecordingServiceController.referenceDb as MutableStateFlow).value = null
+        (RecordingServiceController.sessionStartMs as MutableStateFlow).value = null
         super.onDestroy()
     }
 
@@ -181,13 +197,23 @@ class RecordingService : Service() {
         maxDb = maxDb, deltaVsNightMeanDb = deltaVsNightMeanDb, truncated = truncated
     )
 
-    private fun buildNotification(): Notification =
-        NotificationCompat.Builder(this, CHANNEL_ID)
+    private fun buildNotification(currentDb: Double? = null, elapsedMs: Long? = null): Notification {
+        val text = buildString {
+            if (currentDb != null) append(String.format(Locale.US, "%.1f dB", currentDb))
+            if (elapsedMs != null) {
+                if (isNotEmpty()) append(" — ")
+                val s = elapsedMs / 1000
+                append("depuis %02d:%02d:%02d".format(s / 3600, (s % 3600) / 60, s % 60))
+            }
+            if (isEmpty()) append(getString(R.string.notif_text))
+        }
+        return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentTitle(getString(R.string.notif_title))
-            .setContentText(getString(R.string.notif_text))
+            .setContentText(text)
             .setOngoing(true)
             .build()
+    }
 
     private fun createChannel() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(

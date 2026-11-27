@@ -12,6 +12,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,6 +27,10 @@ import androidx.core.content.ContextCompat
 import com.polo.soundlogger.data.SettingsRepository
 import com.polo.soundlogger.service.RecordingService
 import com.polo.soundlogger.service.RecordingServiceController
+import kotlinx.coroutines.delay
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 /** Permissions runtime nécessaires à l'enregistrement (spec §2.3). */
 fun requiredPermissions(): Array<String> =
@@ -50,9 +55,20 @@ fun HomeScreen() {
     val recording by RecordingServiceController.isRecording.collectAsState()
     val currentDb by RecordingServiceController.currentLevel.collectAsState()
     val referenceDb by RecordingServiceController.referenceDb.collectAsState()
+    val sessionStartMs by RecordingServiceController.sessionStartMs.collectAsState()
     var permissionDenied by remember { mutableStateOf(false) }
     var showDetection by remember { mutableStateOf(false) }
     val settings by SettingsRepository.get(context).settings.collectAsState()
+
+    // Horloge + chronomètre de la session, rafraîchis chaque seconde pendant l'enregistrement
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(recording) {
+        while (recording) {
+            now = System.currentTimeMillis()
+            delay(1000)
+        }
+    }
+    val clockFmt = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault())
 
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -85,6 +101,14 @@ fun HomeScreen() {
             CircularProgressIndicator()
             Spacer(Modifier.height(16.dp))
             Text("Nuit en cours — niveau courant : " + "%.1f".format(currentDb) + " dB", fontSize = 20.sp)
+            Text("Heure actuelle : ${clockFmt.format(Instant.ofEpochMilli(now))}", fontSize = 18.sp)
+            sessionStartMs?.let { start ->
+                Text(
+                    "Surveillance depuis ${formatDuration(now - start)} " +
+                        "(démarrée à ${clockFmt.format(Instant.ofEpochMilli(start))})",
+                    fontSize = 14.sp
+                )
+            }
             referenceDb?.let {
                 Text("Référence mesurée (moyenne t0+15 → t0+30 min) : " + "%.1f".format(it) + " dB", fontSize = 12.sp)
             }
@@ -125,4 +149,9 @@ fun HomeScreen() {
     if (showDetection) {
         DetectionDialog(settings = settings, onDismiss = { showDetection = false })
     }
+}
+
+private fun formatDuration(durationMs: Long): String {
+    val s = durationMs / 1000
+    return "%02d:%02d:%02d".format(s / 3600, (s % 3600) / 60, s % 60)
 }
