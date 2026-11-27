@@ -109,5 +109,6 @@ class SoundLevelMeter(
     }
 
     private fun toDb(amplitude: Double): Double =
-        if (amplitude <= 0.0) 0.0 else 20.0 * log10(amplitude) + calibrationOffsetDb
+        // plancher à 0 dB : en silence numérique, 20*log10(tiny) partirait à -inf
+        if (amplitude <= 0.0) 0.0 else (20.0 * log10(amplitude) + calibrationOffsetDb).coerceAtLeast(0.0)
 }
