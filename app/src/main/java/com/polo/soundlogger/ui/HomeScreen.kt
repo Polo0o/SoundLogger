@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.polo.soundlogger.data.SettingsRepository
 import com.polo.soundlogger.service.RecordingService
 import com.polo.soundlogger.service.RecordingServiceController
 
@@ -48,7 +49,10 @@ fun HomeScreen() {
     val context = LocalContext.current
     val recording by RecordingServiceController.isRecording.collectAsState()
     val currentDb by RecordingServiceController.currentLevel.collectAsState()
+    val referenceDb by RecordingServiceController.referenceDb.collectAsState()
     var permissionDenied by remember { mutableStateOf(false) }
+    var showDetection by remember { mutableStateOf(false) }
+    val settings by SettingsRepository.get(context).settings.collectAsState()
 
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -81,6 +85,9 @@ fun HomeScreen() {
             CircularProgressIndicator()
             Spacer(Modifier.height(16.dp))
             Text("Nuit en cours — niveau courant : " + "%.1f".format(currentDb) + " dB", fontSize = 20.sp)
+            referenceDb?.let {
+                Text("Référence mesurée (moyenne t0+15 → t0+30 min) : " + "%.1f".format(it) + " dB", fontSize = 12.sp)
+            }
             Text("(le service foreground enregistre, écran verrouillé OK)", fontSize = 12.sp)
         } else {
             Text("SoundLogger", fontSize = 28.sp)
@@ -101,9 +108,13 @@ fun HomeScreen() {
         Button(onClick = { toggle() }) {
             Text(if (recording) "Arrêter la nuit" else "Démarrer la nuit")
         }
-        // TODO v0.2 : modal de paramétrage des événements :
-        //  - mode seuil absolu (slider, ex. 55 dB)
-        //  - mode seuil relatif différé (+delta dB sur la moyenne t0+15 -> t0+30 min)
-        //  - durée minimale de dépassement (500 ms), retour au calme (10 s)
+        Spacer(Modifier.height(12.dp))
+        OutlinedButton(onClick = { showDetection = true }) {
+            Text("Détection d'événements")
+        }
+    }
+
+    if (showDetection) {
+        DetectionDialog(settings = settings, onDismiss = { showDetection = false })
     }
 }

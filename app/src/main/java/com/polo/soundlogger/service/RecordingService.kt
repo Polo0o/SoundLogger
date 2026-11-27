@@ -36,6 +36,8 @@ import kotlinx.coroutines.runBlocking
 object RecordingServiceController {
     val isRecording: StateFlow<Boolean> = MutableStateFlow(false)
     val currentLevel: StateFlow<Double> = MutableStateFlow(0.0)
+    /** Référence mesurée (moyenne t0+15→t0+30 min) en mode relatif, null sinon (spec §4.1). */
+    val referenceDb: StateFlow<Double?> = MutableStateFlow(null)
 }
 
 /**
@@ -101,6 +103,7 @@ class RecordingService : Service() {
             ).apply {
                 onLevel = { level ->
                     (RecordingServiceController.currentLevel as MutableStateFlow).value = level.leqDb
+                    (RecordingServiceController.referenceDb as MutableStateFlow).value = detector?.referenceDb
                     if (nightId > 0) {
                         // insertSample est suspend : on est sur le thread du meter.
                         val sample = Sample(nightId = nightId, ts = level.timestampMs,
@@ -146,12 +149,18 @@ class RecordingService : Service() {
                 } else {
                     dao.finishNight(id, System.currentTimeMillis())
                 }
+                // Rétention : suppression auto au-delà de N nuits (0 = illimité, spec §5)
+                val retention = SettingsRepository.get(applicationContext).settings.value.retentionNights
+                if (retention > 0) {
+                    dao.allNights().drop(retention).forEach { dao.deleteNightCascade(it.id) }
+                }
             }
         }
         detector = null
         scope.cancel()
         (RecordingServiceController.isRecording as MutableStateFlow).value = false
         (RecordingServiceController.currentLevel as MutableStateFlow).value = 0.0
+        (RecordingServiceController.referenceDb as MutableStateFlow).value = null
         super.onDestroy()
     }
 

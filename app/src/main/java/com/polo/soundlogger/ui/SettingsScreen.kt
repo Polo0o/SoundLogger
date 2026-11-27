@@ -12,11 +12,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.polo.soundlogger.data.SettingsRepository
+import com.polo.soundlogger.service.NightScheduler
 import java.util.Locale
 
 /**
@@ -93,11 +95,53 @@ fun SettingsScreen() {
             }
         }
 
+        // Session programmée (spec §4.4, étape 5) : auto start/stop via WorkManager.
         Card(Modifier.fillMaxWidth()) {
-            Text(
-                "TODO : session programmée (auto start/stop), seuils de détection d'événements",
-                Modifier.padding(16.dp), fontSize = 12.sp
-            )
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.Switch(
+                        checked = settings.autoStartEnabled,
+                        onCheckedChange = {
+                            repo.update { copy(autoStartEnabled = it) }
+                            NightScheduler.scheduleNext(context)
+                        }
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Session programmée (auto start/stop)")
+                }
+                if (settings.autoStartEnabled) {
+                    Text("Début : ${settings.autoStartMinutes / 60} h ${"%02d".format(settings.autoStartMinutes % 60)}")
+                    Slider(
+                        value = (settings.autoStartMinutes / 60).toFloat(),
+                        onValueChange = {
+                            repo.update { copy(autoStartMinutes = (it.toInt() * 60).coerceIn(0, 23 * 60 + 59)) }
+                            NightScheduler.scheduleNext(context)
+                        },
+                        valueRange = 0f..23f, steps = 22
+                    )
+                    Text("Fin : ${settings.autoStopMinutes / 60} h ${"%02d".format(settings.autoStopMinutes % 60)}")
+                    Slider(
+                        value = (settings.autoStopMinutes / 60).toFloat(),
+                        onValueChange = {
+                            repo.update { copy(autoStopMinutes = (it.toInt() * 60).coerceIn(0, 23 * 60 + 59)) }
+                            NightScheduler.scheduleNext(context)
+                        },
+                        valueRange = 0f..23f, steps = 22
+                    )
+                }
+            }
+        }
+
+        // Rétention (spec §5) : 0 = illimité (défaut)
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(if (settings.retentionNights == 0) "Rétention : illimitée" else "Rétention : ${settings.retentionNights} nuits max")
+                Slider(
+                    value = settings.retentionNights.toFloat(),
+                    onValueChange = { repo.update { copy(retentionNights = it.toInt()) } },
+                    valueRange = 0f..90f, steps = 89
+                )
+            }
         }
     }
 }

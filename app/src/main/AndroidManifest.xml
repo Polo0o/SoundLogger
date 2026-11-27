@@ -33,6 +33,15 @@
             android:exported="false"
             android:foregroundServiceType="microphone" />
 
+        <!-- Relance de la planification après reboot (spec §2.3, étape 5). -->
+        <receiver
+            android:name=".service.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
         <!-- FileProvider pour le partage du CSV exporté (spec §5, étape 4). -->
         <provider
             android:name="androidx.core.content.FileProvider"

@@ -28,10 +28,10 @@
 - [x] FileProvider (`res/xml/file_paths.xml` + déclaration manifest) pour le partage CSV `night_YYYY-MM-DD.csv` via intent.
 - [x] Agrégation + détection déclenchées à la fin de session (rétro-analyse dans `RecordingService.onDestroy` : événements finaux avec deltas + stats de nuit).
 
-## Étape 5 — Sessions programmées et finitions
-- [ ] Auto start/stop programmés (WorkManager), relance après reboot (RECEIVE_BOOT_COMPLETED).
-- [ ] Modal de paramétrage des événements sur l'écran principal (spec §4.1 : slider seuil absolu, ΔdB, fenêtre de référence, durées).
-- [ ] Suppression auto optionnelle au-delà de N nuits.
+## Étape 5 — Sessions programmées et finitions (fait)
+- [x] Auto start/stop programmés (WorkManager, `NightScheduler` + Start/StopNightWorker, replanifiés à chaque cycle et à l'ouverture de l'app), relance après reboot (`BootReceiver` BOOT_COMPLETED).
+- [x] Modal de paramétrage des événements sur l'écran principal (`DetectionDialog`, spec §4.1 : seuil absolu slider, ΔdB relatif, durées min/calme) + affichage de la référence mesurée t0+15→t0+30 min pendant l'enregistrement.
+- [x] Suppression auto au-delà de N nuits (réglage rétention, 0 = illimité, appliquée à la clôture de session).
 
 ## Étape 6 — Release v1
 - [ ] Vérifier les 6 critères d'acceptation (docs/SPECIFICATIONS.md §8).
