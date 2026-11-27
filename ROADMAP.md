@@ -17,11 +17,11 @@
 - [x] Événements persistés (table Room `events`, DB v2) + stats de nuit à l'arrêt du service (`NightStats` : Leq, min/max, L10/L50/L90, heure la plus bruyante).
 - [x] Tests unitaires sur nuits simulées (`EventDetectorTest` 5 tests, `NightStatsTest` 2 tests, `AWeightingFilterTest` 3 tests) : `./gradlew testDebugUnitTest` OK.
 
-## Étape 3 — Rapport du matin
-- [ ] Courbe Leq de la nuit : Vico ou MPAndroidChart, zoom, couleur par plage (<45 vert, 45-60 orange, >60 rouge), marqueurs d'événements.
-- [ ] Stats : Leq, min/max, L10/L50/L90, heure la plus bruyante.
-- [ ] Liste des événements tapables → détail (courbe zoomée de l'événement).
-- [ ] Comparaison du Leq avec la moyenne des nuits précédentes.
+## Étape 3 — Rapport du matin (fait)
+- [x] Courbe Leq de la nuit : tracé Canvas Compose maison (`ui/NightChart.kt`) avec zoom/pan au doigt, couleur par plage (<45 vert, 45–60 orange, >60 rouge), bande min/max, marqueurs d'événements tapables. (Choix indicatif Vico/MPAndroidChart remplacé par un Canvas custom : zéro dépendance, contrôle total des couleurs/marqueurs/zoom.)
+- [x] Stats : Leq, min/max, L10/L50/L90, heure la plus bruyante (`NightStats`, persistées à l'arrêt de session).
+- [x] Liste des événements tapables → détail + zoom auto sur l'événement dans la courbe.
+- [x] Comparaison du Leq de la nuit avec la moyenne des nuits précédentes.
 
 ## Étape 4 — Historique et export
 - [ ] Résumé multi-nuits (date, Leq, nb d'événements, durée, sparkline), suppression/renommage.
