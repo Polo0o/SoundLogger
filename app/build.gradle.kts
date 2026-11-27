@@ -16,9 +16,21 @@ android {
         versionName = "0.1.0"
     }
 
+    // Signature release : keystore LOCAL non commité, fourni par variables d'env
+    // (SOUNDLOGGER_KEYSTORE, SOUNDLOGGER_KEYSTORE_PASSWORD, SOUNDLOGGER_KEY_ALIAS,
+    //  SOUNDLOGGER_KEY_PASSWORD). Voir README §Release.
+    signingConfigs {
+        create("release") {
+            storeFile = file(System.getenv("SOUNDLOGGER_KEYSTORE") ?: "../soundlogger-release.jks")
+            storePassword = System.getenv("SOUNDLOGGER_KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("SOUNDLOGGER_KEY_ALIAS")
+            keyPassword = System.getenv("SOUNDLOGGER_KEY_PASSWORD")
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {

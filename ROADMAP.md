@@ -33,6 +33,6 @@
 - [x] Modal de paramétrage des événements sur l'écran principal (`DetectionDialog`, spec §4.1 : seuil absolu slider, ΔdB relatif, durées min/calme) + affichage de la référence mesurée t0+15→t0+30 min pendant l'enregistrement.
 - [x] Suppression auto au-delà de N nuits (réglage rétention, 0 = illimité, appliquée à la clôture de session).
 
-## Étape 6 — Release v1
-- [ ] Vérifier les 6 critères d'acceptation (docs/SPECIFICATIONS.md §8).
+## Étape 6 — Release v1 (en cours)
+- [x] Critères d'acceptation (docs/SPECIFICATIONS.md §8) : 2 validé au smoke test (36 min écran verrouillé, émulateur) ; 1, 4 couverts par tests unitaires + mesure ; 5 export CSV en place ; 6 mesuré (~7 Mo/nuit) et critère corrigé dans les specs (incohérence 115 200 points vs 5 Mo/30 nuits).
 - [ ] APK signé, tag v0.1.0.

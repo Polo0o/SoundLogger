@@ -22,6 +22,24 @@ Motivation : les apps grand public (ex. Decibel X) ne permettent pas de consulte
 
 Kotlin, Jetpack Compose, MVVM, Room, AudioRecord (16 kHz / 16 bits / mono), WorkManager.
 
+## Build
+
+- Debug : `./gradlew assembleDebug` (APK non signé de dev dans `app/build/outputs/apk/debug/`).
+- Tests unitaires : `./gradlew testDebugUnitTest`.
+- Release signé : `./gradlew assembleRelease` avec un keystore local **non commité**, fourni
+  par variables d'environnement :
+  ```sh
+  export SOUNDLOGGER_KEYSTORE=/chemin/soundlogger-release.jks \
+         SOUNDLOGGER_KEYSTORE_PASSWORD=... SOUNDLOGGER_KEY_ALIAS=... SOUNDLOGGER_KEY_PASSWORD=...
+  ./gradlew assembleRelease   # -> app/build/outputs/apk/release/app-release.apk
+  ```
+
+## Smoke test
+
+Procédure complète (adb, téléphone réel ou émulateur) et résultats constatés :
+[docs/TEST_SMOKE.md](docs/TEST_SMOKE.md).
+
 ## Statut
 
-Squelette de projet — en cours de développement. Voir les spécifications pour les critères d'acceptation.
+v0.1.0 — taguée. Voir [ROADMAP.md](ROADMAP.md) et les critères d'acceptation dans
+[docs/SPECIFICATIONS.md](docs/SPECIFICATIONS.md) §8.

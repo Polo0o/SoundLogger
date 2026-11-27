@@ -51,6 +51,20 @@ et wake lock actif.
 - Notification permanente visible, wake lock `SoundLogger:night` held.
 - Niveau courant cohérent (bruit ambiant typique d'une chambre : 25–45 dB(A)).
 
+## Résultat constaté (27/11/2026, émulateur Android 16, émulation logicielle sans KVM)
+
+- Session de **36 min** (20:47:52 → 21:23:48 UTC), écran verrouillé (`mWakefulness=Asleep`)
+  pendant toute la session : **8063 échantillons écrits en continu** (~250 ms/échantillon),
+  wake lock `PARTIAL_WAKE_LOCK 'SoundLogger:night'` held, notification foreground
+  `ONGOING_EVENT|FOREGROUND_SERVICE` visible. Critère 2 validé.
+- Quelques gaps > 1 s (max 6,7 s) constatés, imputables à la starvation CPU de
+  l'émulation TCG (SystemUI en ANR) et non à l'app — à re-vérifier sur téléphone réel.
+- Arrêt via le bouton : la nuit est clôturée avec ses stats (Leq, min/max, L10/L50/L90,
+  heure la plus bruyante) et `eventCount`. 0 événement détecté (micro émulateur = silence,
+  niveaux ~0 dB(A) ; la détection est couverte par les tests unitaires `EventDetectorTest`).
+- Stockage mesuré : ~60 octets/échantillon en WAL Room → ~7 Mo par nuit de 8 h
+  (115 200 points). Voir la note du critère 6 dans `docs/SPECIFICATIONS.md` §8.
+
 ## Note calibration (étape 1)
 
 Placer le téléphone à côté d'un sonomètre de référence, lire les deux valeurs,

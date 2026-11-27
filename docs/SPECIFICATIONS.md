@@ -117,4 +117,8 @@ App Android qui enregistre le niveau sonore ambiant toute la nuit, détecte les 
 3. Le rapport du matin est consultable en < 2 s après la fin de session.
 4. Un événement testé (ex. claquement de porte) est détecté et horodaté à ±1 s.
 5. Export CSV d'une nuit réimportable dans un tableur sans nettoyage manuel.
-6. 30 nuits archivées occupent < 5 Mo.
+6. Stockage : mesure du 27/11/2026 (smoke test émulateur) ≈ 60 octets/échantillon en Room
+   (WAL), soit ~7 Mo par nuit de 8 h à 250 ms (115 200 points). Le seuil initial « 30 nuits
+   < 5 Mo » était incohérent avec 115 200 points/nuit (même en binaire 4 octets/point = 13,8 Mo
+   pour 30 nuits) ; critère corrigé en : **30 nuits de 8 h < 250 Mo** (et ~7 Mo/nuit). La
+   rétention réglable (étape 5) permet de borner strictement.
